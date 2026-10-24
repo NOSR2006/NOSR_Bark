@@ -10,21 +10,22 @@ async function handleRequest(request, env, ctx) {
     const rootPath = env.ROOT_PATH || '/'
     const basicAuth = env.BASIC_AUTH
 
+    const db = new Database(env)
     const {searchParams, pathname} = new URL(request.url)
-    const handler = new Handler(env, { allowNewDevice, allowQueryNums })
-    const realPathname = pathname.replace((new RegExp('^' + rootPath.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&"))), '/')
+    const handler = new Handler(db, { allowNewDevice, allowQueryNums })
+    const realPathname = pathname.replace((new RegExp('^' + rootPath.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&'))), '/')
 
     switch (realPathname) {
-        case "/register": {
+        case '/register': {
             return handler.register(searchParams)
         }
-        case "/ping": {
+        case '/ping': {
             return handler.ping(searchParams)
         }
-        case "/healthz": {
+        case '/healthz': {
             return handler.healthz(searchParams)
         }
-        case "/info": {
+        case '/info': {
             if (!util.validateBasicAuth(request, basicAuth)) {
                 return new Response('Unauthorized', {
                     status: 401,
@@ -56,11 +57,45 @@ async function handleRequest(request, env, ctx) {
                 try {
                     if (contentType && contentType.includes('application/json')) {
                         requestBody = await request.json()
+
+                        requestBody = Object.keys(requestBody).reduce((obj, key) => {
+                            obj[key.toLowerCase()] = requestBody[key]
+                            return obj
+                        }, {})
                     }else if (contentType && contentType.includes('application/x-www-form-urlencoded')){
                         const formData = await request.formData()
-                        formData.forEach((value, key) => {requestBody[key] = value})
+                        formData.forEach((value, key) => {requestBody[key.toLowerCase()] = value})
+
+                        try {
+                            if (requestBody.title) {
+                                requestBody.title = decodeURIComponent(requestBody.title.replaceAll('\\+', '%20'))
+                            }
+                            
+                            if (requestBody.subtitle) {
+                                requestBody.subtitle = decodeURIComponent(requestBody.subtitle.replaceAll('\\+', '%20'))
+                            }
+                            
+                            if (requestBody.body) {
+                                requestBody.body = decodeURIComponent(requestBody.body.replaceAll('\\+', '%20'))
+                            }
+
+                            if (requestBody.markdown) {
+                                requestBody.markdown = decodeURIComponent(requestBody.markdown.replaceAll('\\+', '%20'))
+                            }
+                        } catch (error) {
+                            return new Response(JSON.stringify({
+                                'code': 500,
+                                'meaasge': `url path parse failed: ${error}`,
+                                'timestamp': util.getTimestamp(),
+                            }), {
+                                status: 500,
+                                headers: {
+                                    'content-type': 'application/json',
+                                }
+                            })
+                        }
                     }else{
-                        searchParams.forEach((value, key) => {requestBody[key] = value})
+                        searchParams.forEach((value, key) => {requestBody[key.toLowerCase()] = value})
 
                         if (pathParts.length === 3) {
                             requestBody.body = pathParts[2]
@@ -83,13 +118,42 @@ async function handleRequest(request, env, ctx) {
                                 }
                             })
                         }
+
+                        try {
+                            if (requestBody.title) {
+                                requestBody.title = decodeURIComponent(requestBody.title.replaceAll('\\+','%20'))
+                            }
+                            
+                            if (requestBody.subtitle) {
+                                requestBody.subtitle = decodeURIComponent(requestBody.subtitle.replaceAll('\\+','%20'))
+                            }
+                            
+                            if (requestBody.body) {
+                                requestBody.body = decodeURIComponent(requestBody.body.replaceAll('\\+','%20'))
+                            }
+
+                            if (requestBody.markdown) {
+                                requestBody.markdown = decodeURIComponent(requestBody.markdown.replaceAll('\\+','%20'))
+                            }
+                        } catch (error) {
+                            return new Response(JSON.stringify({
+                                'code': 500,
+                                'meaasge': `url path parse failed: ${error}`,
+                                'timestamp': util.getTimestamp(),
+                            }), {
+                                status: 500,
+                                headers: {
+                                    'content-type': 'application/json',
+                                }
+                            })
+                        }
                     }
 
                     if (requestBody.device_keys && typeof requestBody.device_keys === 'string') {
                         if (requestBody.device_keys.startsWith('[') || requestBody.device_keys.endsWith(']')) {
                             requestBody.device_keys = JSON.parse(requestBody.device_keys)
                         } else {
-                            requestBody.device_keys = (decodeURIComponent(requestBody.device_keys).trim()).split(',').map(item => item.replace(/"/g, '').trim())
+                            requestBody.device_keys = (decodeURIComponent(requestBody.device_keys).trim()).split(',').map(item => item.replace(/['"]/g, '').trim())
                         }
 
                         if (typeof requestBody.device_keys === 'string') {
@@ -159,6 +223,15 @@ async function handleRequest(request, env, ctx) {
                 return handler.push(requestBody)
             }
 
+            if (realPathname === '/') {
+                return new Response('ok', {
+                    status: 200,
+                    headers: {
+                        'content-type': 'text/plain',
+                    }
+                })
+            }
+
             return new Response(JSON.stringify({
                 'code': 404,
                 'message': `Cannot ${request.method} ${realPathname}`,
@@ -174,15 +247,14 @@ async function handleRequest(request, env, ctx) {
 }
 
 class Handler {
-    constructor(env, options) {
-        this.version = "v2.2.6"
-        this.build = "2025-10-25 21:09:29"
-        this.arch = "js"
-        this.commit = "a5d5365ad2dc362858b39044f05da9e10d3538cf"
+    constructor(db, options) {
+        this.version = 'v2.2.6'
+        this.build = '2025-12-03 10:51:22'
+        this.arch = 'js'
+        this.commit = '18d1037eab7a2310f595cfd31ea49b444f6133f2'
         this.allowNewDevice = options.allowNewDevice
         this.allowQueryNums = options.allowQueryNums
-        const db = new Database(env)
-
+        
         this.register = async (parameters) => {
             const deviceToken = parameters.get('devicetoken')
             let key = parameters.get('key')
@@ -262,7 +334,7 @@ class Handler {
         }
 
         this.healthz = async (parameters) => {
-            return new Response("ok", {
+            return new Response('ok', {
                 status: 200,
                 headers: {
                     'content-type': 'text/plain',
@@ -333,34 +405,9 @@ class Handler {
                 })
             }
 
-            let title = parameters.title || undefined
-            let subtitle = parameters.subtitle || undefined
-            let body = parameters.body || undefined
-
-            try {
-                if (title) {
-                    title = decodeURIComponent(title.replaceAll("\\+","%20"))
-                }
-                
-                if (subtitle) {
-                    subtitle = decodeURIComponent(subtitle.replaceAll("\\+","%20"))
-                }
-                
-                if (body) {
-                    body = decodeURIComponent(body.replaceAll("\\+","%20"))
-                }
-            } catch (error) {
-                return new Response(JSON.stringify({
-                    'code': 500,
-                    'meaasge': `url path parse failed: ${error}`,
-                    'timestamp': util.getTimestamp(),
-                }), {
-                    status: 500,
-                    headers: {
-                        'content-type': 'application/json',
-                    }
-                })
-            }
+            const title = parameters.title || undefined
+            const subtitle = parameters.subtitle || undefined
+            const body = parameters.body || undefined
 
             let sound = parameters.sound || undefined
             if (sound) {
@@ -372,9 +419,8 @@ class Handler {
             }
 
             const group = parameters.group || undefined
-            
             const call = parameters.call || undefined
-            const isArchive = parameters.isArchive || undefined
+            const isArchive = parameters.isarchive || undefined
             const icon = parameters.icon || undefined
             const ciphertext = parameters.ciphertext || undefined
             const level = parameters.level || undefined
@@ -383,12 +429,13 @@ class Handler {
             const image = parameters.image || undefined
             const copy = parameters.copy || undefined
             const badge = parameters.badge || undefined
-            const autoCopy = parameters.autoCopy || undefined
+            const autoCopy = parameters.autocopy || undefined
             const action = parameters.action || undefined
             const iv = parameters.iv || undefined
             const id = parameters.id || undefined
             const _delete = parameters.delete || undefined
-
+            const markdown = parameters.markdown || undefined
+            
             // https://developer.apple.com/documentation/usernotifications/generating-a-remote-notification
             const aps = {
                 'aps': (_delete) ? {
@@ -442,6 +489,7 @@ class Handler {
                 'image': image,
                 'id': id,
                 'delete': _delete,
+                'markdown': markdown,
             }
 
             const headers = {
@@ -555,7 +603,7 @@ class APNs {
                     'apns-id': headers['apns-id'] || undefined,
                     'apns-collapse-id': headers['apns-collapse-id'] || undefined,
                     'apns-priority': (headers['apns-priority'] > 0) ? headers['apns-priority'] : undefined,
-                    'apns-expiration': util.getTimestamp() + 86400,
+                    'apns-expiration': headers['apns-expiration'] || util.getTimestamp() + 86400,
                     'apns-push-type': headers['apns-push-type'] || 'alert',
                     'authorization': `bearer ${AUTHENTICATION_TOKEN}`,
                     'content-type': 'application/json',
@@ -577,7 +625,7 @@ class Database {
             const query = 'SELECT COUNT(*) as rowCount FROM `devices`'
             const result = await db.prepare(query).run()
             
-            return (result.results[0] || {"rowCount": -1}).rowCount
+            return (result.results[0] || {'rowCount': -1}).rowCount
         }
 
         this.deviceTokenByKey = async (key) => {
@@ -585,7 +633,7 @@ class Database {
             const query = 'SELECT `token` FROM `devices` WHERE `key` = ?'
             const result = await db.prepare(query).bind(device_key).run()
 
-            return (result.results[0] || {}).token
+            return (result.results[0] || {'token': undefined}).token
         }
 
         this.saveDeviceTokenByKey = async (key, token) => {

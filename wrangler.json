@@ -16,7 +16,7 @@
         }
     ],
     "vars": {
-        "ALLOW_NEW_DEVICE": "true",
+        "ALLOW_NEW_DEVICE": "false",
         "ALLOW_QUERY_NUMS": "true",
         "ROOT_PATH": "/"
     }
